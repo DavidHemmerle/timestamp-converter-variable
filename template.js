@@ -2,6 +2,8 @@
 const Math = require('Math');
 const getTimestampMillis = require('getTimestampMillis');
 const makeString = require('makeString');
+const log = require('logToConsole');
+//log(getTimestampMillis());
 
 const leapYear = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 const nonLeapYear = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
@@ -11,14 +13,15 @@ const minToMs = (m) => m * secToMs(60);
 const hoursToMs = (h) => h * minToMs(60);
 const daysToMs = (d) => d * hoursToMs(24);
 const padStart = (value, length) => {
-  let result = makeString(value);
+  let result = makeString(value); 
   while (result.length < length) {
     result = '0' + result;
   }
   return result;
 };
 
-function convertTimestampToISO(timestamp) {
+function convertTimestampToISO(timestamp, offset) {
+  //log(timestamp + " " + offset);
   const fourYearsInMs = daysToMs(365 * 4 + 1);
   let year = 1970 + Math.floor(timestamp / fourYearsInMs) * 4;
   timestamp = timestamp % fourYearsInMs;
@@ -54,7 +57,10 @@ function convertTimestampToISO(timestamp) {
   let sec = Math.floor(timestamp / secToMs(1));
   timestamp = timestamp - secToMs(sec);
   let milliSeconds = timestamp;
-
+  
+  let offsetISO = offset ? offset / (1000*60*60) : 0;
+  let offsetSeparator = offsetISO < 0 ? '-' : '+';
+      
   return (
     year +
     '-' +
@@ -62,20 +68,33 @@ function convertTimestampToISO(timestamp) {
     '-' +
     padStart(date, 2) +
     'T' +
-    padStart(hours, 2) +
+    //padStart(hours, 2) +
+    (padStart(hours, 2) === "24" ? "00" : padStart(hours, 2)) +
     ':' +
     padStart(minutes, 2) +
     ':' +
     padStart(sec, 2) +
     '.' +
     padStart(milliSeconds, 3) +
-    'Z'
+    offsetSeparator + 
+    padStart(offsetISO, 2) +
+    ':00'
   );
 }
 
 function convertISOToTime(dateTime) {
   const dateArray = dateTime.split('T')[0].split('-');
   const timeArray = dateTime.split('T')[1].split(':');
+  
+  let offsetTime = 0;
+  if (dateTime.indexOf("+") > 0 || dateTime.indexOf("-") > 0) {
+    let seperator = dateTime.indexOf("+") > 0 ? "+" : "-";
+    let multiplicator = dateTime.indexOf("+") > 0 ? -1 : 1;
+    const offsetArray = dateTime.split(seperator)[1].split(':');
+    offsetTime = (makeInteger(offsetArray[0]) * 3600) + (makeInteger(offsetArray[1]) * 60);
+    offsetTime = offsetTime * multiplicator; 
+    //log(offsetTime);
+  }
 
   const year = makeInteger(dateArray[0]);
   const month = makeInteger(dateArray[1]);
@@ -96,7 +115,7 @@ function convertISOToTime(dateTime) {
     yearCounter++;
   }
 
-  const monthList = yearCounter % 4 === 0 ? leapYear : nonLeapYear;
+  const monthList = yearCounter % 4 === 0 ? leapYear : nonLeapYear; 
 
   let monthCounter = 1;
   while (monthCounter < month) {
@@ -128,16 +147,20 @@ function convertISOToTime(dateTime) {
     secondsCounter++;
   }
 
-  return unixTime;
+  return unixTime + offsetTime;
 }
 
 const type = data.type;
 
 if (type === 'to_iso') {
+  let offset = makeInteger(data.offsetIso);
+  let timestamp = makeInteger(data.timestamp);
+  
   return convertTimestampToISO(
-    data.timestamp === 'current_timestamp'
-      ? getTimestampMillis()
-      : makeInteger(data.timestamp + '000')
+    data.timestamp === 'current_timestamp' || !data.timestamp || ((data.timestamp.length < 13 || data.timestamp < 9999999999) && data.timestampFormat === "msecs")
+      ? (getTimestampMillis() + offset)
+      : (data.timestampFormat === "seconds" ? timestamp*1000 + offset : timestamp + offset),
+    offset
   );
 } else if (type === 'to_timestamp') {
   return makeInteger(convertISOToTime(data.iso8601DateTime));
